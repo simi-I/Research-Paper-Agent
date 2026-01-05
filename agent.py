@@ -3,7 +3,7 @@ import json
 import os
 import logging
 from typing import List, Any
-from google.adk.agents import LlmAgent
+from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.models.google_llm import Gemini
 from google.adk.tools import AgentTool
 from google.genai import types 
@@ -49,4 +49,105 @@ def search_arxiv(query : str, max_results: int= 5) -> str:
         return formatted
     except Exception as e:
         return f"Error searching ArXiv: {str(e)}"
+    
+def format_citation(title: str, authors: List[str], year: str, url: str) -> str:
+    """Formats a research paper citation"""
+    author_str = ", ".join(authors)
+    return f"{author_str} ({year}). **{title}**. Retrieved from {url}"
+
+# Use /tmp for writable location in cloud environments
+MEMORY_FILE = "/tmp/knowledge_base.json"
+
+def save_to_memory(key: str, value: Any) -> str:
+    """Saves to a key-value pair ot a persistent JSON file."""
+    try:
+        if os.path.exists(MEMORY_FILE):
+            with open(MEMORY_FILE, "r") as f:
+                data = json.load(f)
+        else:
+            data = {}
+            
+        data[key] = value
+        
+        with open(MEMORY_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+            
+        return f"Successfully saved '{key}' to long-term memory."
+    except Exception as e:
+        return f"Error saving to memory: {str(e)}"
+    
+    
+# Agents
+
+retry_config = types.HttpRetryOptions(
+    attempts=3, 
+    exp_base=2, 
+    initial_delay=1, 
+    http_status_codes=[429, 500, 503, 504],
+)
+
+model = Gemini(model='gemini-2.5-flash-lite', retry_options=retry_config)
+
+# Research Agent
+researcher_agent = LlmAgent(
+    name="researcher_agent", 
+    model= model, 
+    description="searches for research papers using ArXiv API",
+    instruction="""
+    You are a research assistant with access to ArXiv.
+    When given a research topic:
+    1. Use the 'search_arxiv' tool to find relevant academic papers.
+    2. Focus on recent papers (2023-2025 when possible).
+    3. Return the paper details including title, authors, dates and URLs.
+    """, 
+    tools = [search_arxiv]
+)
+
+# Analyst Agent
+analyst_agent = LlmAgent(
+    name = "Analyst_agent", 
+    model=model, 
+    description= "Analyzes research data and creates visualizations.",
+    instruction="""
+    You are a data analyst.
+    Given a list of research data or search results:
+    1. Extract the publication years from the paper information.
+    2. Calculate the distribution of papers by year.
+    3. Create a simple ASCII bar chart showing the distribution.
+    4. Return the analysis summary and the ASCII chart.
+    """
+)
+
+formatter_agent = LlmAgent(
+    name="formatter_agent", 
+    model=model,
+    description="Formats paper details into proper citations.",
+    instruction="""
+    You are a citation expert.
+    Take the raw paper information and format it into clean academic citations.
+    Use APA format: Authors (Year). Title. Retrieved from URL
+    Return the final list of formatted citations as a numbered list.
+    """
+)
+
+Research_agent = SequentialAgent(
+    name="ResearchSystems",
+    sub_agents=[researcher_agent, analyst_agent, formatter_agent]
+)
+
+root_agent = LlmAgent(
+    name="root_agent", 
+    model=model,
+    instruction="""
+    You are the Lead Research Coordinator. 
+    You MUST generate a final test response summarizing the results
+    """, 
+    tools = [
+        AgentTool(Research_agent),
+        save_to_memory
+    ]
+)
+
+
+    
     

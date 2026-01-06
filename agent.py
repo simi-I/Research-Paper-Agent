@@ -3,7 +3,7 @@ import json
 import os
 import logging
 from typing import List, Any
-from google.adk.agents import LlmAgent, SequentialAgent
+from google.adk.agents import LlmAgent, SequentialAgent, ParallelAgent
 from google.adk.models.google_llm import Gemini
 from google.adk.tools import AgentTool
 from google.genai import types 
@@ -55,27 +55,6 @@ def format_citation(title: str, authors: List[str], year: str, url: str) -> str:
     author_str = ", ".join(authors)
     return f"{author_str} ({year}). **{title}**. Retrieved from {url}"
 
-# Use /tmp for writable location in cloud environments
-MEMORY_FILE = "/tmp/knowledge_base.json"
-
-def save_to_memory(key: str, value: Any) -> str:
-    """Saves to a key-value pair ot a persistent JSON file."""
-    try:
-        if os.path.exists(MEMORY_FILE):
-            with open(MEMORY_FILE, "r") as f:
-                data = json.load(f)
-        else:
-            data = {}
-            
-        data[key] = value
-        
-        with open(MEMORY_FILE, "w") as f:
-            json.dump(data, f, indent=2)
-            
-        return f"Successfully saved '{key}' to long-term memory."
-    except Exception as e:
-        return f"Error saving to memory: {str(e)}"
-    
     
 # Agents
 
@@ -98,7 +77,7 @@ researcher_agent = LlmAgent(
     When given a research topic:
     1. Use the 'search_arxiv' tool to find relevant academic papers.
     2. Focus on recent papers (2023-2025 when possible).
-    3. Return the paper details including title, authors, dates and URLs.
+    3. Return the paper details including title, authors, summary, dates and URLs.
     """, 
     tools = [search_arxiv]
 )
@@ -130,9 +109,15 @@ formatter_agent = LlmAgent(
     """
 )
 
+parallel_agent = ParallelAgent(
+    name="Parallel_agent",
+    sub_agents=[analyst_agent, formatter_agent]
+)
+
+
 Research_agent = SequentialAgent(
-    name="ResearchSystems",
-    sub_agents=[researcher_agent, analyst_agent, formatter_agent]
+    name="Research_agents",
+    sub_agents=[researcher_agent, parallel_agent]
 )
 
 root_agent = LlmAgent(
@@ -140,14 +125,18 @@ root_agent = LlmAgent(
     model=model,
     instruction="""
     You are the Lead Research Coordinator. 
-    You MUST generate a final test response summarizing the results
+    You MUST generate a final report summarizing the results from the Research_agent, 
+    The research agent is Sequential agent with a researcher agent and a parallel agent to handle analysis and formatting, 
+    The final report must contain 
+        - The summary of the identified papers, 
+        - Show the publication year analysis chart
+        - Show the "Formatted citiations"
     """, 
     tools = [
         AgentTool(Research_agent),
-        save_to_memory
+        
     ]
 )
-
 
     
     

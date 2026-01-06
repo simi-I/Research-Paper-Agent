@@ -1,0 +1,5 @@
+{
+    "agent_name": "research-assistant",
+    "agent_description": "Multi-agent academic research system",
+    "model": "gemini-2.5-flash-lite"
+}

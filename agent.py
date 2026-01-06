@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Tools
 
-def search_arxiv(query : str, max_results: int= 5) -> str:
+def search_arxiv(query : str, max_results: int= 10) -> str:
     try:
         search = arxiv.Search(
             query=query,
@@ -79,7 +79,8 @@ researcher_agent = LlmAgent(
     2. Focus on recent papers (2023-2025 when possible).
     3. Return the paper details including title, authors, summary, dates and URLs.
     """, 
-    tools = [search_arxiv]
+    tools = [search_arxiv], 
+    output_key="query_research"
 )
 
 # Analyst Agent
@@ -94,7 +95,8 @@ analyst_agent = LlmAgent(
     2. Calculate the distribution of papers by year.
     3. Create a simple ASCII bar chart showing the distribution.
     4. Return the analysis summary and the ASCII chart.
-    """
+    """, 
+    output_key="query_analysis"
 )
 
 formatter_agent = LlmAgent(
@@ -106,7 +108,8 @@ formatter_agent = LlmAgent(
     Take the raw paper information and format it into clean academic citations.
     Use APA format: Authors (Year). Title. Retrieved from URL
     Return the final list of formatted citations as a numbered list.
-    """
+    """, 
+    output_key="citation_format"
 )
 
 parallel_agent = ParallelAgent(
@@ -115,28 +118,37 @@ parallel_agent = ParallelAgent(
 )
 
 
-Research_agent = SequentialAgent(
-    name="Research_agents",
-    sub_agents=[researcher_agent, parallel_agent]
-)
-
-root_agent = LlmAgent(
-    name="root_agent", 
+aggregator_agent = LlmAgent(
+    name="aggregator_agent", 
     model=model,
     instruction="""
-    You are the Lead Research Coordinator. 
+    You are the Lead Research Coordinator.
+    
+    Combine this agents output into a single report
+    
+    **Paper Summary**
+    {query_research}
+    
+    **Analysis**
+    {query_analysis}
+    
+    **Citations**
+    {citation_format}
+    
     You MUST generate a final report summarizing the results from the Research_agent, 
-    The research agent is Sequential agent with a researcher agent and a parallel agent to handle analysis and formatting, 
     The final report must contain 
         - The summary of the identified papers, 
         - Show the publication year analysis chart
         - Show the "Formatted citiations"
     """, 
-    tools = [
-        AgentTool(Research_agent),
-        
-    ]
+    output_key="research_summary"
 )
+
+root_agent = SequentialAgent(
+    name="Research_agents",
+    sub_agents=[researcher_agent, parallel_agent, aggregator_agent]
+)
+
 
     
     
